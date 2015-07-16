@@ -13,7 +13,7 @@
 # limitations under the License.
 """
 Usage:
-  calicoctl node [--ip=<IP>] [--ip6=<IP6>] [--node-image=<DOCKER_IMAGE_NAME>] [--as=<AS_NUM>] [--log-dir=<LOG_DIR>] [--detach=<DETACH>] [--plugin-dir=<PLUGIN_DIR>]
+  calicoctl node [--ip=<IP>] [--ip6=<IP6>] [--node-image=<DOCKER_IMAGE_NAME>] [--as=<AS_NUM>] [--log-dir=<LOG_DIR>] [--detach=<DETACH>] [--plugin-dir=<PLUGIN_DIR>] [--kubernetes]
   calicoctl node stop [--force]
   calicoctl node bgp peer add <PEER_IP> as <AS_NUM>
   calicoctl node bgp peer remove <PEER_IP>
@@ -37,9 +37,11 @@ Options:
   --as=<AS_NUM>             The default AS number for this node.
   --ipv4                    Show IPv4 information only.
   --ipv6                    Show IPv6 information only.
+  --kubernetes              Download and install the kubernetes plugin
 """
 import sys
 import os
+import stat
 import sh
 import docker
 import netaddr
@@ -50,6 +52,7 @@ from utils import ORCHESTRATOR_ID
 from utils import hostname
 from utils import client
 from utils import docker_client
+from utils import print_paragraph
 from pycalico.datastore_datatypes import BGPPeer
 from pycalico.datastore import (ETCD_AUTHORITY_ENV,
                                 ETCD_AUTHORITY_DEFAULT)
@@ -58,11 +61,73 @@ from utils import check_ip_version
 from netaddr import IPAddress
 from prettytable import PrettyTable
 from utils import get_container_ipv_from_arguments
+from utils import validate_ip
 import sys
 import signal
 
 DEFAULT_IPV4_POOL = IPPool("192.168.0.0/16")
 DEFAULT_IPV6_POOL = IPPool("fd80:24e2:f998:72d6::/64")
+
+KUBERNETES_BINARY_URL = 'https://github.com/Metaswitch/calico-docker/releases/download/v0.5.1/calico_kubernetes'
+KUBERNETES_PLUGIN_DIR = '/usr/libexec/kubernetes/kubelet-plugins/net/exec/calico/'
+KUBERNETES_PLUGIN_DIR_BACKUP = '/etc/kubelet-plugins/calico/'
+
+
+def validate_arguments(arguments):
+    """
+    Validate argument values:
+        <IP>
+        <IP6>
+        <PEER_IP>
+        <AS_NUM>
+        <DETACH>
+
+    Arguments not validated:
+        <DOCKER_IMAGE_NAME>
+        <LOG_DIR>
+
+    :param arguments: Docopt processed arguments
+    """
+    # Validate IPs
+    ip_ok = arguments.get("--ip") is None or \
+            validate_ip(arguments.get("--ip"), "v4")
+    ip6_ok = arguments.get("--ip6") is None or \
+             validate_ip(arguments.get("--ip6"), "v6")
+    container_ip_ok = arguments.get("<IP>") is None or \
+                      validate_ip(arguments["<IP>"], "v4") or \
+                      validate_ip(arguments["<IP>"], "v6")
+    peer_ip_ok = arguments.get("<PEER_IP>") is None or \
+                 validate_ip(arguments["<PEER_IP>"], "v4") or \
+                 validate_ip(arguments["<PEER_IP>"], "v6")
+
+    asnum_ok = True
+    if arguments.get("<AS_NUM>") or arguments.get("--as"):
+        try:
+            asnum = int(arguments["<AS_NUM>"] or arguments["--as"])
+            asnum_ok = 0 <= asnum <= 4294967295
+        except ValueError:
+            asnum_ok = False
+
+    detach_ok = True
+    if arguments.get("<DETACH>") or arguments.get("--detach"):
+        detach_ok = arguments.get("--detach") in ["true", "false"]
+
+    # Print error message
+    if not ip_ok:
+        print "Invalid IPv4 address specified with --ip argument."
+    if not ip6_ok:
+        print "Invalid IPv6 address specified with --ip6 argument."
+    if not container_ip_ok or not peer_ip_ok:
+        print "Invalid IP address specified."
+    if not asnum_ok:
+        print "Invalid AS Number specified."
+    if not detach_ok:
+        print "Valid values for --detach are 'true' and 'false'"
+
+    # Exit if not valid argument
+    if not (ip_ok and ip6_ok and container_ip_ok and peer_ip_ok and asnum_ok
+            and detach_ok):
+        sys.exit(1)
 
 
 def node(arguments):
@@ -73,6 +138,8 @@ def node(arguments):
     this file's docstring with docopt
     :return: None
     """
+    validate_arguments(arguments)
+
     if arguments.get("bgp"):
         if arguments.get("peer"):
             ip_version = get_container_ipv_from_arguments(arguments)
@@ -98,10 +165,11 @@ def node(arguments):
                    plugin_dir=arguments.get("--plugin-dir"),
                    ip6=arguments.get("--ip6"),
                    as_num=arguments.get("--as"),
-                   detach=detach)
+                   detach=detach,
+                   kubernetes=arguments.get("--kubernetes"))
 
 
-def node_start(node_image, log_dir, plugin_dir, ip, ip6, as_num, detach):
+def node_start(node_image, log_dir, plugin_dir, ip, ip6, as_num, detach, kubernetes):
     """
     Create the calico-node container and establish Calico networking on this
     host.
@@ -144,6 +212,15 @@ def node_start(node_image, log_dir, plugin_dir, ip, ip6, as_num, detach):
 
     # Warn if this hostname conflicts with an existing host
     warn_if_hostname_conflict(ip)
+
+    # Install kubernetes plugin
+    if kubernetes:
+        try:
+            # Attempt to install to the default kubernetes directory
+            install_kubernetes(KUBERNETES_PLUGIN_DIR)
+        except OSError:
+            # Use the backup directory
+            install_kubernetes(KUBERNETES_PLUGIN_DIR_BACKUP)
 
     # Set up etcd
     ipv4_pools = client.get_ip_pools("v4")
@@ -347,7 +424,7 @@ def warn_if_hostname_conflict(ip):
         # Otherwise, check if another host with the same hostname
         # is already configured
         try:
-            current_ipv4, _ = client.get_host_ips(hostname)
+            current_ipv4, _ = client.get_host_bgp_ips(hostname)
         except KeyError:
             # No other machine has registered configuration under this hostname.
             # This must be a new host with a unique hostname, which is the
@@ -355,12 +432,12 @@ def warn_if_hostname_conflict(ip):
             pass
         else:
             if current_ipv4 != "" and current_ipv4 != ip:
-                print "WARNING: Hostname '%s' is already in use with IP address " \
-                      "%s. Calico requires each compute host to have a " \
-                      "unique hostname. If this is your first time running " \
-                      "'calicoctl node' on this host, ensure that " \
-                      "another host is not already using the " \
-                      "same hostname."  % (hostname, ip)
+                print_paragraph("WARNING: Hostname '%s' is already in use "
+                    "with IP address %s. Calico requires each compute host to "
+                    "have a unique hostname. If this is your first time "
+                    "running 'calicoctl node' on this host, ensure that " \
+                    "another host is not already using the " \
+                    "same hostname."  % (hostname, ip))
 
 
 def _find_or_pull_node_image(image_name, client):
@@ -411,3 +488,22 @@ def _attach_and_stream(container):
         # Could either be this process is being killed, or output generator
         # raises an exception.
         docker_client.stop(container)
+
+def install_kubernetes(kubernetes_plugin_dir):
+    """
+    Downloads the kubernetes plugin to the specified directory.
+    :param kubernetes_plugin_dir: Desired download location for the plugin.
+    :return: Nothing
+    """
+    if not os.path.exists(kubernetes_plugin_dir):
+        os.makedirs(kubernetes_plugin_dir)
+    kubernetes_binary_path = kubernetes_plugin_dir + 'calico'
+    wget = sh.Command._create('wget')
+    try:
+        wget('-O', kubernetes_binary_path, KUBERNETES_BINARY_URL)
+        st = os.stat(kubernetes_binary_path)
+        executable_permissions = st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        os.chmod(kubernetes_binary_path, executable_permissions)
+    except sh.ErrorReturnCode_8:
+        print "ERROR: Couldn't download the kubernetes binary"
+        sys.exit(1)

@@ -13,11 +13,10 @@ WHEEL_VERSION=0.0.0
 LOCAL_IP_ENV?=$(shell ip route get 8.8.8.8 | head -1 | cut -d' ' -f8)
 ST_TO_RUN?=calico_containers/tests/st/
 
-# Scale - add var for building binaries
-
 default: all
 all: test
-binary: dist/calicoctl dist/calico_kubernetes
+binary: dist/calicoctl
+node: caliconode.created
 wheel: dist/pycalico-$(WHEEL_VERSION)-py2-none-any.whl
 
 caliconode.created: $(PYCALICO) $(NODE_FILES)
@@ -141,9 +140,9 @@ install-completion: /etc/bash_completion.d/calicoctl.sh
 	cp dist/calicoctl.sh /etc/bash_completion.d
 
 .PHONY: kubernetes	
-kubernetes: dist/calico_kubernetes
+kubernetes: /dist/calico_kubernetes
 
-dist/calico_kubernetes:
+/dist/calico_kubernetes:
 	# Build docker container
 	cd build_calicoctl; docker build -t calico-build .
 	mkdir -p dist
