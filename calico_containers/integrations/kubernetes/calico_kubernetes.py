@@ -327,14 +327,27 @@ class NetworkPlugin(object):
             return
 
         for k, v in labels.iteritems():
-            tag = '%s_%s' % (k, v)
-            tag = tag.replace('/', '_')
+            tag = '%s\=%s' % (k, v)
+            tag = tag.replace('/', '\/')
+            tag = tag.replace('-', '\-')
             print('Adding tag ' + tag)
             try:
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
             except sh.ErrorReturnCode as e:
                 print('Could not create tag %s.\n%s' % (tag, e))
         print('Finished applying tags.')
+
+    def _get_annotations(self, pod):
+        print('Getting Annotations')
+        try:
+            return pod['annotations']
+        except KeyError:
+            # If there are no labels, there's no more work to do.
+            print('No Annotations found in pod %s' % pod)
+            return
+
+    def _create_rules_from_annotations(self):
+        return
 
 if __name__ == '__main__':
     print('Args: %s' % sys.argv)
