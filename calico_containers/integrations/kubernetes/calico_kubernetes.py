@@ -343,7 +343,7 @@ class NetworkPlugin(object):
     def _get_annotations(self, pod):
         print('Getting Annotations')
         try:
-            return pod['metadata']['annotations']
+            return pod['annotations']
         except KeyError:
             # If there are no labels, there's no more work to do.
             print('No Annotations found in pod %s' % pod)
