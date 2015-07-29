@@ -326,10 +326,13 @@ class NetworkPlugin(object):
             print('No labels found in pod %s' % pod)
             return
 
+        namespace = self._get_namespace(pod)
+
         for k, v in labels.iteritems():
             tag = '%s\=%s' % (k, v)
             tag = tag.replace('/', '\/')
             tag = tag.replace('-', '\-')
+            tag = (namespace + '\/' + tag) if namespace else tag
             print('Adding tag ' + tag)
             try:
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
@@ -345,6 +348,14 @@ class NetworkPlugin(object):
             # If there are no labels, there's no more work to do.
             print('No Annotations found in pod %s' % pod)
             return
+
+    def _get_namespace(self, pod):
+        try:
+            return pod['metadata']['namespace']
+        except KeyError:
+            # If there are no labels, there's no more work to do.
+            print('No namespace found in pod %s' % pod)
+            return None
 
     def _create_rules_from_annotations(self):
         return
