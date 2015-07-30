@@ -166,7 +166,7 @@ class NetworkPlugin(object):
         self.calicoctl('profile', 'add', profile_name)
         pod = self._get_pod_config()
 
-        self._apply_rules(profile_name)
+        self._apply_rules(profile_name, pod)
 
         self._apply_tags(profile_name, pod)
 
@@ -248,7 +248,7 @@ class NetworkPlugin(object):
         auth_data = json.loads(json_string)
         return auth_data['BearerToken']
 
-    def _generate_rules(self):
+    def _generate_rules(self, pod):
         """
         Generate the Profile rules that have been specified on the Pod's ports.
 
@@ -303,7 +303,7 @@ class NetworkPlugin(object):
         print('Final profile "%s": %s' % (profile_name, profile_json))
         return profile_json
 
-    def _apply_rules(self, profile_name):
+    def _apply_rules(self, profile_name, pod):
         """
         Generate a new profile with the default 'allow all' rules.
 
@@ -311,7 +311,7 @@ class NetworkPlugin(object):
         :type profile_name: string
         :return:
         """
-        rules = self._generate_rules()
+        rules = self._generate_rules(pod)
         profile_json = self._generate_profile_json(profile_name, rules)
 
         # Pipe the Profile JSON into the calicoctl command to update the rule.
@@ -366,7 +366,7 @@ class NetworkPlugin(object):
         print('Getting Annotations for pod %s' % pod)
         try:
             annotations = pod['metadata']['annotations']
-            print(annotations)
+            print('Annotations for Pod %s\n%s' % (pod, annotations))
             return annotations
         except KeyError:
             print('No Annotations found in pod %s' % pod)
