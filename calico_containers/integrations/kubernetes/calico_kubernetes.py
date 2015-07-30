@@ -4,6 +4,7 @@ import os
 import sys
 from subprocess import check_output, CalledProcessError, check_call
 import requests
+from urllib import quote
 import sh
 
 # Append to existing env, to avoid losing PATH etc.
@@ -260,14 +261,24 @@ class NetworkPlugin(object):
         inbound_rules = [
             {
                 'action': 'allow',
-            },
+            }
         ]
 
         outbound_rules = [
             {
                 'action': 'allow',
-            },
+            }
         ]
+
+        print('Getting Policy Rules from Annotation of pod %s' % pod)
+
+        annotations = self._get_annotations(pod)
+
+        if 'allowFrom' in annotations.keys():
+            inbound_rules = eval(annotations['allowFrom'])
+            for rule in inbound_rules:
+                rule['action'] = 'allow'
+
         return inbound_rules, outbound_rules
 
     def _generate_profile_json(self, profile_name, rules):
@@ -326,12 +337,10 @@ class NetworkPlugin(object):
             print('No labels found in pod %s' % pod)
             return
 
-        escape_seq = '_.-'
-
         # Grab namespace and create a tag if it exists.
         namespace = self._get_namespace(pod)
         if namespace:
-            namespace = urllib.quote(namespace, safe='')
+            namespace = quote(namespace, safe='')
             namespace = namespace.replace('%', escape_seq)
             tag = 'namespace' + escape_seq + '3D' + namespace
             try:
@@ -341,10 +350,7 @@ class NetworkPlugin(object):
 
         # Apply tags from labels
         for k, v in labels.iteritems():
-            tag = '%s=%s' % (k, v)
-            tag = (namespace + '/' + tag) if namespace else tag
-            tag = urllib.quote(tag, safe='')
-            tag = tag.replace('%', escape_seq)
+            tag = self._label_to_tag(k, v, namespace)
             print('Adding tag ' + tag)
             try:
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
@@ -353,24 +359,55 @@ class NetworkPlugin(object):
         print('Finished applying tags.')
 
     def _get_annotations(self, pod):
-        print('Getting Annotations')
+        """
+        Return annotations given Pod Object
+        Returns None if no annotation exists
+        """
+        print('Getting Annotations for pod %s' % pod)
         try:
-            return pod['metadata']['annotations']
+            annotations = pod['metadata']['annotations']
+            print(annotations)
+            return annotations
         except KeyError:
-            # If there are no labels, there's no more work to do.
             print('No Annotations found in pod %s' % pod)
-            return
+            return None
 
     def _get_namespace(self, pod):
+        """
+        Return Namespace given Pod Object
+        Returns None if no namespace exists
+        """
         try:
-            return pod['metadata']['namespace']
+            namespace = pod['metadata']['namespace']
+            print("Pod %s in Namespace %s" % (pos, namespace))
+            return namespace
         except KeyError:
-            # If there are no labels, there's no more work to do.
             print('No namespace found in pod %s' % pod)
             return None
 
-    def _create_rules_from_annotations(self):
-        return
+    def _label_to_tag(self, label_key, label_value, namespace):
+        """
+        Labels are key-value pairs, tags are single strings. This function handles that translation
+        1) concatenate key and value with '='
+        2) prepend a pod's namespace followed by '/' if available
+        3) replace special characters with urllib-style escape sequence
+        :param label_key: key to label
+        :param label_value: value to given key for a label
+        :param namespace: Namespace string, input None if not available
+        :param types: (self, string, string, string)
+        :return single string tag
+        :rtype string
+        """
+        escape_seq = '_.-'
+
+        tag = '%s=%s' % (label_key, label_value)
+        tag = (namespace + '/' + tag) if namespace else tag
+        tag = quote(tag, safe='')
+        tag = tag.replace('%', escape_seq)
+
+        return tag
+
+
 
 if __name__ == '__main__':
     print('Args: %s' % sys.argv)
