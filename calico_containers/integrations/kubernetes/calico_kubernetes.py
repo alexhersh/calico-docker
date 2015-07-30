@@ -326,13 +326,25 @@ class NetworkPlugin(object):
             print('No labels found in pod %s' % pod)
             return
 
-        namespace = self._get_namespace(pod)
+        escape_seq = '_.-'
 
+        # Grab namespace and create a tag if it exists.
+        namespace = self._get_namespace(pod)
+        if namespace:
+            namespace = urllib.quote(namespace, safe='')
+            namespace = namespace.replace('%', escape_seq)
+            tag = 'namespace' + escape_seq + '3D' + namespace
+            try:
+                self.calicoctl('profile', profile_name, 'tag', 'add', tag)
+            except sh.ErrorReturnCode as e:
+                print('Could not create tag %s.\n%s' % (tag, e))
+
+        # Apply tags from labels
         for k, v in labels.iteritems():
-            tag = '%s\=%s' % (k, v)
-            tag = tag.replace('/', '\/')
-            tag = tag.replace('-', '\-')
-            tag = (namespace + '\/' + tag) if namespace else tag
+            tag = '%s=%s' % (k, v)
+            tag = (namespace + '/' + tag) if namespace else tag
+            tag = urllib.quote(tag, safe='')
+            tag = tag.replace('%', escape_seq)
             print('Adding tag ' + tag)
             try:
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
@@ -343,7 +355,7 @@ class NetworkPlugin(object):
     def _get_annotations(self, pod):
         print('Getting Annotations')
         try:
-            return pod['annotations']
+            return pod['metadata']['annotations']
         except KeyError:
             # If there are no labels, there's no more work to do.
             print('No Annotations found in pod %s' % pod)
