@@ -17,7 +17,6 @@ from requests import Response
 from StringIO import StringIO
 from mock import patch, Mock, call
 from nose_parameterized import parameterized
-from netaddr import IPAddress
 from docker.errors import APIError
 from calico_ctl.bgp import *
 from calico_ctl.bgp import validate_arguments as bgp_validate_arguments
@@ -28,7 +27,8 @@ from calico_ctl.pool import validate_arguments as pool_validate_arguments
 from calico_ctl.profile import validate_arguments as profile_validate_arguments
 from calico_ctl.container import validate_arguments as container_validate_arguments
 from calico_ctl.container import container_add
-from calico_ctl.utils import validate_cidr, validate_ip, validate_characters
+from calico_ctl.utils import (validate_cidr, validate_ip, validate_characters,
+                              validate_hostname_port)
 from pycalico.datastore_datatypes import BGPPeer
 from pycalico.datastore import (ETCD_AUTHORITY_ENV,
                                 ETCD_AUTHORITY_DEFAULT)
@@ -208,6 +208,7 @@ class TestContainer(unittest.TestCase):
         m_info.assert_called_once_with(name)
         m_sys.exit.assert_called_once_with(1)
 
+
 class TestEndpoint(unittest.TestCase):
 
     @parameterized.expand([
@@ -275,7 +276,7 @@ class TestNode(unittest.TestCase):
         ip_1 = '1.1.1.1'
         ip_2 = '2.2.2.2'
         m_get_host_ips.return_value = [ip_1, ip_2]
-        m_os_getenv.return_value = '1.1.1.1:80'
+        m_os_getenv.side_effect = iter(['1.1.1.1:80', ""])
         m_docker.utils.create_host_config.return_value = 'host_config'
         container = {'Id':666}
         m_docker_client.create_container.return_value = container
@@ -301,6 +302,7 @@ class TestNode(unittest.TestCase):
             "IP6=%s" % ip6,
             "ETCD_AUTHORITY=1.1.1.1:80",  # etcd host:port
             "FELIX_ETCDADDR=1.1.1.1:80",  # etcd host:port
+            "POLICY_ONLY_CALICO=",
         ]
         binds = {
             "/proc":
@@ -336,9 +338,11 @@ class TestNode(unittest.TestCase):
         m_docker_client.remove_container.assert_called_once_with(
             'calico-node', force=True
         )
-        m_os_getenv.assert_called_once_with(
-            ETCD_AUTHORITY_ENV, ETCD_AUTHORITY_DEFAULT
-        )
+
+        getenv_calls = [call(ETCD_AUTHORITY_ENV, ETCD_AUTHORITY_DEFAULT),
+                        call(node.POLICY_ONLY_ENV, "")]
+        m_os_getenv.assert_has_calls(getenv_calls)
+
         m_docker.utils.create_host_config.assert_called_once_with(
             privileged=True,
             restart_policy={"Name":"Always"},
@@ -346,7 +350,7 @@ class TestNode(unittest.TestCase):
             binds=binds
         )
         m_find_or_pull_node_image.assert_called_once_with(
-            'node_image', m_docker_client
+            'node_image'
         )
         m_docker_client.create_container.assert_called_once_with(
             node_image,
@@ -360,43 +364,6 @@ class TestNode(unittest.TestCase):
         )
         m_docker_client.start.assert_called_once_with(container)
         m_attach_and_stream.assert_called_once_with(container)
-
-    @patch('sys.exit', autospec=True)
-    @patch('os.path.exists', autospec=True)
-    @patch('os.makedirs', autospec=True)
-    @patch('os.getenv', autospec=True)
-    @patch('calico_ctl.node.check_system', autospec=True)
-    @patch('calico_ctl.node.get_host_ips', autospec=True)
-    @patch('calico_ctl.node.warn_if_unknown_ip', autospec=True)
-    @patch('calico_ctl.node.warn_if_hostname_conflict', autospec=True)
-    @patch('calico_ctl.node.install_kubernetes', autospec=True)
-    @patch('calico_ctl.node.client', autospec=True)
-    @patch('calico_ctl.node.docker_client', autospec=True)
-    def test_node_start_invalid_etcd_authority(
-            self, m_docker_client, m_client, m_install_kube, m_warn_if_hostname_conflict,
-            m_warn_if_unknown_ip, m_get_host_ips, m_check_system,
-            m_os_getenv, m_os_makedirs, m_os_path_exists, m_sys_exit):
-        """
-        Test that node_start exits when given a bad etcd authority ip:port
-        """
-        # Set up mock objects
-        m_os_getenv.return_value = '1.1.1.1:80:100'
-
-        # Set up arguments
-        node_image = 'node_image'
-        log_dir = './log_dir'
-        ip = ''
-        ip6 = 'aa:bb::zz'
-        as_num = ''
-        detach = False
-        kubernetes = True
-
-        # Call method under test
-        node.node_start(
-            node_image, log_dir, ip, ip6, as_num, detach, kubernetes
-        )
-
-        m_sys_exit.assert_called_once_with(1)
 
     @patch('os.path.exists', autospec=True)
     @patch('os.makedirs', autospec=True)
@@ -705,6 +672,42 @@ class TestUtils(unittest.TestCase):
 
             # Assert expected result
             self.assertEqual(expected_result, test_result)
+
+
+    @parameterized.expand([
+        ('1.2.3.4', False),
+        ('abcde', False),
+        ('aa:bb::cc:1234', False),
+        ('aa::256', False),
+        ('aa...bb:256', False),
+        ('aa:256', True),
+        ('1.2.3.244:256', True),
+        ('1.2.a.244:256', True),
+        ('-asr:100', False),
+        ('asr-:100', False),
+        ('asr-temp-test.thr.yes-33:100', True),
+        ('asr-temp-test.-thr.yes-33:100', False),
+        ('asr-temp-test.thr-.yes-33:100', False),
+        ('asr-temp-test.thr-.yes-33:100', False),
+        ('validhostname:0', False),
+        ('validhostname:65536', False),
+        ('validhostname:1', True),
+        ('validhostname:65535', True),
+        ('#notvalidhostname:65535', False),
+        ('verylong' * 100 + ':200', False),
+        ('12.256.122.43:aaa', False)
+    ])
+    def test_validate_hostname_port(self, input_string, expected_result):
+        """
+        Test validate_hostname_port function.
+
+        This also tests validate_hostname which is invoked from
+        validate_hostname_port.
+        """
+        test_result = validate_hostname_port(input_string)
+
+        # Assert expected result
+        self.assertEqual(expected_result, test_result)
 
 
 class SysExitMock(Exception):
