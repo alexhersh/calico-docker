@@ -25,6 +25,9 @@ KUBE_API_ROOT = os.environ.get('KUBE_API_ROOT',
                                'http://kubernetes-master:8080/api/v1/')
 print("Using KUBE_API_ROOT=%s" % KUBE_API_ROOT)
 
+escape_seq = '_'
+
+
 
 class NetworkPlugin(object):
     def __init__(self):
@@ -400,7 +403,6 @@ class NetworkPlugin(object):
         :return single string tag
         :rtype string
         """
-        escape_seq = '_.-'
 
         tag = '%s=%s' % (label_key, label_value)
         tag = (namespace + '/' + tag) if namespace else tag
