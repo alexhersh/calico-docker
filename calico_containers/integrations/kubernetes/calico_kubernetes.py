@@ -259,31 +259,39 @@ class NetworkPlugin(object):
 
         :return list() rules: the rules to be added to the Profile.
         """
+
+        NAMESPACE_PREFIX, NAMESPACE_TAG = self._get_namespace_and_tag(pod)
+
         inbound_rules = [
             {
-                'action': 'allow',
-            },
+                "action": "allow",
+                "src_tag": NAMESPACE_TAG
+            }
         ]
 
         outbound_rules = [
             {
-                'action': 'allow',
-            },
+                "action": "allow"
+            }
         ]
 
         print('Getting Policy Rules from Annotation of pod %s' % pod)
 
         annotations = self._get_metadata(pod, 'annotations')
-        namespace = self._get_metadata(pod, 'namespace')
 
         if 'allowFrom' in annotations.keys():
-            inbound_rules = load_json(annotations['allowFrom'])
-            for rule in inbound_rules:
-                print 'debug: kube rule\n%s' % rule
-                rule = self._translate_rule(rule, namespace)
-                print 'debug: calico rule\n%s' % rule
+            rules = load_json(annotations['allowFrom'])
+            for rule in rules:
                 rule['action'] = 'allow'
-                print 'debug: inbound rules:\n%s\n------' % inbound_rules
+                rule = self._translate_rule(rule, NAMESPACE_PREFIX)
+                inbound_rules.append(rule)
+
+        if 'allowTo' in annotations.keys():
+            rules = load_json(annotations['allowTo'])
+            for rule in rules:
+                rule['action'] = 'allow'
+                rule = self._translate_rule(rule, NAMESPACE_PREFIX)
+                outbound_rules.append(rule)
 
         return inbound_rules, outbound_rules
 
@@ -339,10 +347,9 @@ class NetworkPlugin(object):
         print('Applying tags')
 
         # Grab namespace and create a tag if it exists.
-        NAMESPACE_PREFIX = self._get_metadata(pod, 'namespace')
+        NAMESPACE_PREFIX, NAMESPACE_TAG = self._get_namespace_and_tag(pod)
 
         if NAMESPACE_PREFIX:
-            tag = self._label_to_tag('namespace', NAMESPACE_PREFIX, None)
             try:
                 print('Adding tag ' + tag)
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
@@ -442,6 +449,13 @@ class NetworkPlugin(object):
             print "Rejected Rules in Kubernetes Annotations \n%s" % kube_rule
 
         return calico_rule
+
+    def _get_namespace_and_tag(self, pod):
+        NAMESPACE_PREFIX = self._get_metadata(pod, 'namespace')
+        NAMESPACE_TAG = self._label_to_tag('namespace', NAMESPACE_PREFIX, None) if NAMESPACE_PREFIX else None
+        return NAMESPACE_PREFIX, NAMESPACE_TAG
+
+
 
 
 if __name__ == '__main__':
