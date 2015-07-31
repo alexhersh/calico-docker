@@ -5,6 +5,7 @@ import sys
 from subprocess import check_output, CalledProcessError, check_call
 import requests
 from urllib import quote
+from json import loads as load_json
 import sh
 
 # Append to existing env, to avoid losing PATH etc.
@@ -276,7 +277,7 @@ class NetworkPlugin(object):
         namespace = self._get_namespace(pod)
 
         if 'allowFrom' in annotations.keys():
-            inbound_rules = eval(annotations['allowFrom'])
+            inbound_rules = load_json(annotations['allowFrom'])
             for rule in inbound_rules:
                 rule = self._translate_rule(rule, namespace)
                 rule['action'] = 'allow'
