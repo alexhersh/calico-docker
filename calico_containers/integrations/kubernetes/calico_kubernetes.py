@@ -280,7 +280,9 @@ class NetworkPlugin(object):
             inbound_rules = load_json(annotations['allowFrom'])
             print 'debug: load_json out\n%s' % inbound_rules
             for rule in inbound_rules:
+                print 'debug: kube rule\n%s' % rule
                 rule = self._translate_rule(rule, namespace)
+                print 'debug: calico rule\n%s' % rule
                 rule['action'] = 'allow'
 
         return inbound_rules, outbound_rules
@@ -346,9 +348,9 @@ class NetworkPlugin(object):
             except sh.ErrorReturnCode as e:
                 print('Could not create tag %s.\n%s' % (tag, e))
 
-        try:
-            labels = pod['metadata']['labels']
-            # Apply tags from labels
+        # Create tags from labels
+        labels = self._get_metadata(pod, 'labels')
+        if labels:
             for k, v in labels.iteritems():
                 tag = self._label_to_tag(k, v, NAMESPACE_PREFIX)
                 print('Adding tag ' + tag)
@@ -356,11 +358,6 @@ class NetworkPlugin(object):
                     self.calicoctl('profile', profile_name, 'tag', 'add', tag)
                 except sh.ErrorReturnCode as e:
                     print('Could not create tag %s.\n%s' % (tag, e))
-
-        except KeyError:
-            # If there are no labels, there's no more work to do.
-            print('No labels found in pod %s' % pod)
-            pass
 
         print('Finished applying tags.')
 
