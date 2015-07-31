@@ -326,7 +326,6 @@ class NetworkPlugin(object):
         :return:
         """
         rules = self._generate_rules(pod)
-        print 'debug: rules \n%s' % rules
         profile_json = self._generate_profile_json(profile_name, rules)
 
         # Pipe the Profile JSON into the calicoctl command to update the rule.
@@ -351,10 +350,10 @@ class NetworkPlugin(object):
 
         if NAMESPACE_PREFIX:
             try:
-                print('Adding tag ' + tag)
-                self.calicoctl('profile', profile_name, 'tag', 'add', tag)
+                print('Adding tag ' + NAMESPACE_TAG) 
+                self.calicoctl('profile', profile_name, 'tag', 'add', NAMESPACE_TAG)
             except sh.ErrorReturnCode as e:
-                print('Could not create tag %s.\n%s' % (tag, e))
+                print('Could not create tag %s.\n%s' % (NAMESPACE_TAG, e))
 
         # Create tags from labels
         labels = self._get_metadata(pod, 'labels')
