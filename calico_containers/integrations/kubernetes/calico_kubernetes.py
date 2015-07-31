@@ -161,8 +161,8 @@ class NetworkPlugin(object):
 
         Currently assumes one pod with each name.
         """
-        print('Configuring Pod Profile')
         profile_name = self.pod_name
+        print('Configuring Pod Profile %s' % profile_name)
         self.calicoctl('profile', 'add', profile_name)
         pod = self._get_pod_config()
 
@@ -347,9 +347,9 @@ class NetworkPlugin(object):
         # Grab namespace and create a tag if it exists.
         namespace, ns_tag = self._get_namespace_and_tag(pod)
 
-        if namespace:
+        if ns_tag:
             try:
-                print('Adding tag ' + ns_tag) 
+                print('Adding tag %s' % ns_tag) 
                 self.calicoctl('profile', profile_name, 'tag', 'add', ns_tag)
             except sh.ErrorReturnCode as e:
                 print('Could not create tag %s.\n%s' % (ns_tag, e))
@@ -384,6 +384,7 @@ class NetworkPlugin(object):
         escape_seq = '_'
         tag = quote(tag, safe='')
         tag = tag.replace('%', escape_seq)
+        return tag
 
     def _get_namespace_and_tag(self, pod):
         namespace = self._get_metadata(pod, 'namespace')
@@ -405,7 +406,7 @@ class NetworkPlugin(object):
         """
         tag = '%s=%s' % (label_key, label_value)
         tag = '%s/%s' % (namespace, tag) if namespace else tag
-        self._escape_chars(tag)
+        tag = self._escape_chars(tag)
         return tag
 
     def _translate_rule(self, kube_rule, namespace):
