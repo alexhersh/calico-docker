@@ -430,7 +430,7 @@ class NetworkPlugin(object):
         }
 
         # Kubernetes and Calico use different syntax, use a dictionary to translate
-        for kube_key, calico_key in translation_dictionary.iteritems()
+        for kube_key, calico_key in translation_dictionary.iteritems():
             if kube_key in calico_rule.keys():
                 calico_rule[calico_key] = calico_rule.pop(kube_key)
 
