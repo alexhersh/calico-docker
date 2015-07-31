@@ -279,8 +279,11 @@ class NetworkPlugin(object):
         if 'allowFrom' in annotations.keys():
             inbound_rules = load_json(annotations['allowFrom'])
             for rule in inbound_rules:
+                print 'debug: kube rule\n%s' % rule
                 rule = self._translate_rule(rule, namespace)
+                print 'debug: calico rule\n%s' % rule
                 rule['action'] = 'allow'
+                print 'debug: inbound rules:\n%s\n------' % inbound_rules
 
         return inbound_rules, outbound_rules
 
@@ -303,7 +306,7 @@ class NetworkPlugin(object):
             'outbound_rules': outbound,
         }
         profile_json = json.dumps(profile, indent=2)
-        print('Final profile "%s":\n%s\n%s' % (profile_name, profile, profile_json))
+        print('Final profile "%s":\n%s' % (profile_name, profile_json))
         return profile_json
 
     def _apply_rules(self, profile_name, pod):
@@ -315,6 +318,7 @@ class NetworkPlugin(object):
         :return:
         """
         rules = self._generate_rules(pod)
+        print 'debug: rules \n%s' % rules
         profile_json = self._generate_profile_json(profile_name, rules)
 
         # Pipe the Profile JSON into the calicoctl command to update the rule.
