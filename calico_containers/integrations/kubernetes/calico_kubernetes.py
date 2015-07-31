@@ -25,9 +25,6 @@ KUBE_API_ROOT = os.environ.get('KUBE_API_ROOT',
                                'http://kubernetes-master:8080/api/v1/')
 print("Using KUBE_API_ROOT=%s" % KUBE_API_ROOT)
 
-escape_seq = '_'
-
-
 
 class NetworkPlugin(object):
     def __init__(self):
@@ -281,7 +278,7 @@ class NetworkPlugin(object):
         if 'allowFrom' in annotations.keys():
             inbound_rules = eval(annotations['allowFrom'])
             for rule in inbound_rules:
-                rule = self._translate_rules(rule, namespace)
+                rule = self._translate_rule(rule, namespace)
                 rule['action'] = 'allow'
 
         return inbound_rules, outbound_rules
@@ -345,9 +342,7 @@ class NetworkPlugin(object):
         # Grab namespace and create a tag if it exists.
         namespace = self._get_namespace(pod)
         if namespace:
-            namespace = quote(namespace, safe='')
-            namespace = namespace.replace('%', escape_seq)
-            tag = 'namespace' + escape_seq + '3D' + namespace
+            tag = self._label_to_tag('namespace', namespace, None)
             try:
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
             except sh.ErrorReturnCode as e:
@@ -403,6 +398,7 @@ class NetworkPlugin(object):
         :return single string tag
         :rtype string
         """
+        escape_seq = '_'
 
         tag = '%s=%s' % (label_key, label_value)
         tag = (namespace + '/' + tag) if namespace else tag
@@ -411,7 +407,7 @@ class NetworkPlugin(object):
 
         return tag
 
-    def _translate_rules(self, rule, namespace):
+    def _translate_rule(self, rule, namespace):
         """
         Given a JSON dict rule from Kubernetes Annotations, 
         output a JSON dict that is calicoctl profile compliant
