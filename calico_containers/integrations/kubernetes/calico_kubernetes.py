@@ -262,13 +262,13 @@ class NetworkPlugin(object):
         inbound_rules = [
             {
                 'action': 'allow',
-            }
+            },
         ]
 
         outbound_rules = [
             {
                 'action': 'allow',
-            }
+            },
         ]
 
         print('Getting Policy Rules from Annotation of pod %s' % pod)
@@ -278,6 +278,7 @@ class NetworkPlugin(object):
 
         if 'allowFrom' in annotations.keys():
             inbound_rules = load_json(annotations['allowFrom'])
+            print 'debug: load_json out\n%s' % inbound_rules
             for rule in inbound_rules:
                 rule = self._translate_rule(rule, namespace)
                 rule['action'] = 'allow'
@@ -365,7 +366,7 @@ class NetworkPlugin(object):
 
     def _get_metadata(self, pod, key):
         """
-        Return Metadata Object given Pod
+        Return Metadata[key] Object given Pod
         Returns None if no key-value exists
         """
         try:
