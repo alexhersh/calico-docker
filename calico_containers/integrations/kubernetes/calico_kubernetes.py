@@ -340,6 +340,7 @@ class NetworkPlugin(object):
         if NAMESPACE_PREFIX:
             tag = self._label_to_tag('namespace', NAMESPACE_PREFIX, None)
             try:
+                print('Adding tag ' + tag)
                 self.calicoctl('profile', profile_name, 'tag', 'add', tag)
             except sh.ErrorReturnCode as e:
                 print('Could not create tag %s.\n%s' % (tag, e))
@@ -412,6 +413,8 @@ class NetworkPlugin(object):
             'dstPorts': 'dst_ports',
             'srcNet': 'src_net',
             'dstNet': 'dst_net',
+            'action': 'action',
+            'protocol': 'protocol',
             'icmpType': 'icmp_type'
         }
 
