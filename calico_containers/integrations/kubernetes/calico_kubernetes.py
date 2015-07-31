@@ -273,8 +273,8 @@ class NetworkPlugin(object):
 
         print('Getting Policy Rules from Annotation of pod %s' % pod)
 
-        annotations = self._get_annotations(pod)
-        namespace = self._get_namespace(pod)
+        annotations = self._get_metadata(pod, 'annotations')
+        namespace = self._get_metadata(pod, 'namespace')
 
         if 'allowFrom' in annotations.keys():
             inbound_rules = load_json(annotations['allowFrom'])
@@ -333,57 +333,46 @@ class NetworkPlugin(object):
         :return:
         """
         print('Applying tags')
+
+        # Grab namespace and create a tag if it exists.
+        NAMESPACE_PREFIX = self._get_metadata(pod, 'namespace')
+
+        if NAMESPACE_PREFIX:
+            tag = self._label_to_tag('namespace', NAMESPACE_PREFIX, None)
+            try:
+                self.calicoctl('profile', profile_name, 'tag', 'add', tag)
+            except sh.ErrorReturnCode as e:
+                print('Could not create tag %s.\n%s' % (tag, e))
+
         try:
             labels = pod['metadata']['labels']
+            # Apply tags from labels
+            for k, v in labels.iteritems():
+                tag = self._label_to_tag(k, v, NAMESPACE_PREFIX)
+                print('Adding tag ' + tag)
+                try:
+                    self.calicoctl('profile', profile_name, 'tag', 'add', tag)
+                except sh.ErrorReturnCode as e:
+                    print('Could not create tag %s.\n%s' % (tag, e))
+
         except KeyError:
             # If there are no labels, there's no more work to do.
             print('No labels found in pod %s' % pod)
-            return
+            pass
 
-        # Grab namespace and create a tag if it exists.
-        namespace = self._get_namespace(pod)
-        if namespace:
-            tag = self._label_to_tag('namespace', namespace, None)
-            try:
-                self.calicoctl('profile', profile_name, 'tag', 'add', tag)
-            except sh.ErrorReturnCode as e:
-                print('Could not create tag %s.\n%s' % (tag, e))
-
-        # Apply tags from labels
-        for k, v in labels.iteritems():
-            tag = self._label_to_tag(k, v, namespace)
-            print('Adding tag ' + tag)
-            try:
-                self.calicoctl('profile', profile_name, 'tag', 'add', tag)
-            except sh.ErrorReturnCode as e:
-                print('Could not create tag %s.\n%s' % (tag, e))
         print('Finished applying tags.')
 
-    def _get_annotations(self, pod):
+    def _get_metadata(self, pod, key):
         """
-        Return annotations given Pod Object
-        Returns None if no annotation exists
-        """
-        print('Getting Annotations for pod %s' % pod)
-        try:
-            annotations = pod['metadata']['annotations']
-            print('Annotations for Pod %s\n%s' % (pod, annotations))
-            return annotations
-        except KeyError:
-            print('No Annotations found in pod %s' % pod)
-            return None
-
-    def _get_namespace(self, pod):
-        """
-        Return Namespace given Pod Object
-        Returns None if no namespace exists
+        Return Metadata Object given Pod
+        Returns None if no key-value exists
         """
         try:
-            namespace = pod['metadata']['namespace']
-            print("Pod %s in Namespace %s" % (pod, namespace))
-            return namespace
+            val = pod['metadata'][key]
+            print("%s of pod %s:\n%s" % (key, pod, val))
+            return val
         except KeyError:
-            print('No namespace found in pod %s' % pod)
+            print('No %s found in pod %s' % (key, pod))
             return None
 
     def _label_to_tag(self, label_key, label_value, namespace):
@@ -408,17 +397,15 @@ class NetworkPlugin(object):
 
         return tag
 
-    def _translate_rule(self, rule, namespace):
+    def _translate_rule(self, kube_rule, namespace):
         """
-        Given a JSON dict rule from Kubernetes Annotations, 
-        output a JSON dict that is calicoctl profile compliant
+        Given a rule dict from Kubernetes Annotations, 
+        output a rule that is calicoctl profile compliant
         :param rule: dict of keys relating to policy rules
         :param namespace: string indicating namespace for pod, None if not available
         :return: translated dict of keys relating to policy rules for Calico profile
-        :rtype: JSON dict
+        :rtype: dict
         """
-        calico_rule = rule
-
         # kube syntax : calico syntax
         translation_dictionary = {
             'srcPorts': 'src_ports',
@@ -428,15 +415,17 @@ class NetworkPlugin(object):
             'icmpType': 'icmp_type'
         }
 
+        calico_rule = dict()
+
         # Kubernetes and Calico use different syntax, use a dictionary to translate
         for kube_key, calico_key in translation_dictionary.iteritems():
-            if kube_key in calico_rule.keys():
-                calico_rule[calico_key] = calico_rule.pop(kube_key)
+            if kube_key in kube_rule.keys():
+                calico_rule[calico_key] = kube_rule.pop(kube_key)
 
         # Label selectors need to translate to tags
-        if 'labels' in calico_rule.keys():
+        if 'labels' in kube_rule.keys():
             # Iterate through 'labels' dict
-            for k, v in calico_rule['labels'].iteritems():
+            for k, v in kube_rule['labels'].iteritems():
                 # For now, we should only see have src_tag key
                 if 'src_tag' not in calico_rule.keys():
                     tag = self._label_to_tag(k, v, namespace)
@@ -445,7 +434,10 @@ class NetworkPlugin(object):
                     print "More than one label specified for policy rule. Multi-tag selection not supported in Calico"
                     sys.exit(1)
 
-            calico_rule.pop('labels')
+            kube_rule.pop('labels')
+
+        if kube_rule :
+            print "Rejected Rules in Kubernetes Annotations \n%s" % kube_rule
 
         return calico_rule
 
