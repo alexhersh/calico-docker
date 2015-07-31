@@ -273,10 +273,12 @@ class NetworkPlugin(object):
         print('Getting Policy Rules from Annotation of pod %s' % pod)
 
         annotations = self._get_annotations(pod)
+        namespace = self._get_namespace(pod)
 
         if 'allowFrom' in annotations.keys():
             inbound_rules = eval(annotations['allowFrom'])
             for rule in inbound_rules:
+                rule = self._translate_rules(rule, namespace)
                 rule['action'] = 'allow'
 
         return inbound_rules, outbound_rules
@@ -407,6 +409,46 @@ class NetworkPlugin(object):
 
         return tag
 
+    def _translate_rules(self, rule, namespace):
+        """
+        Given a JSON dict rule from Kubernetes Annotations, 
+        output a JSON dict that is calicoctl profile compliant
+        :param rule: dict of keys relating to policy rules
+        :param namespace: string indicating namespace for pod, None if not available
+        :return: translated dict of keys relating to policy rules for Calico profile
+        :rtype: JSON dict
+        """
+        calico_rule = rule
+
+        # Kubernetes and Calico use different syntax, these switches will translate K->C
+        if 'srcPort' in calico_rule.keys():
+            calico_rule['src_port'] = calico_rule.pop('srcPort')
+        if 'dstPort' in calico_rule.keys():
+            calico_rule['dst_port'] = calico_rule.pop('dstPort')
+
+        if 'srcIP' in calico_rule.keys():
+            calico_rule['src_IP'] = calico_rule.pop('srcIP')
+        if 'dstIP' in calico_rule.keys():
+            calico_rule['dst_IP'] = calico_rule.pop('dstIP')
+
+        if 'icmpType' in calico_rule.keys():
+            calico_rule['icmp_type'] = calico_rule.pop('icmpType')
+
+        # Label selectors need to translate to tags
+        if 'labels' in calico_rule.keys():
+            # Iterate through 'labels' dict
+            for k, v in calico_rule['labels'].iteritems():
+                # For now, we should only see have src_tag key
+                if 'src_tag' not in calico_rule.keys():
+                    tag = self._label_to_tag(k, v, namespace)
+                    calico_rule['src_tag'] = tag
+                else:
+                    print "More than one label specified for policy rule. Multi-tag selection not supported in Calico"
+                    sys.exit(1)
+
+            calico_rule.pop('labels')
+
+        return calico_rule
 
 
 if __name__ == '__main__':
