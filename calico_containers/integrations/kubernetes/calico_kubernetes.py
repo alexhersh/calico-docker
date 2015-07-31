@@ -381,7 +381,7 @@ class NetworkPlugin(object):
         """
         try:
             namespace = pod['metadata']['namespace']
-            print("Pod %s in Namespace %s" % (pos, namespace))
+            print("Pod %s in Namespace %s" % (pod, namespace))
             return namespace
         except KeyError:
             print('No namespace found in pod %s' % pod)
