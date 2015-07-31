@@ -5,7 +5,6 @@ import sys
 from subprocess import check_output, CalledProcessError, check_call
 import requests
 from urllib import quote
-from json import loads as load_json
 import sh
 
 # Append to existing env, to avoid losing PATH etc.
@@ -260,12 +259,12 @@ class NetworkPlugin(object):
         :return list() rules: the rules to be added to the Profile.
         """
 
-        NAMESPACE_PREFIX, NAMESPACE_TAG = self._get_namespace_and_tag(pod)
+        namespace, ns_tag = self._get_namespace_and_tag(pod)
 
         inbound_rules = [
             {
                 "action": "allow",
-                "src_tag": NAMESPACE_TAG
+                "src_tag": ns_tag
             }
         ]
 
@@ -280,17 +279,17 @@ class NetworkPlugin(object):
         annotations = self._get_metadata(pod, 'annotations')
 
         if 'allowFrom' in annotations.keys():
-            rules = load_json(annotations['allowFrom'])
+            rules = json.loads(annotations['allowFrom'])
             for rule in rules:
                 rule['action'] = 'allow'
-                rule = self._translate_rule(rule, NAMESPACE_PREFIX)
+                rule = self._translate_rule(rule, namespace)
                 inbound_rules.append(rule)
 
         if 'allowTo' in annotations.keys():
-            rules = load_json(annotations['allowTo'])
+            rules = json.loads(annotations['allowTo'])
             for rule in rules:
                 rule['action'] = 'allow'
-                rule = self._translate_rule(rule, NAMESPACE_PREFIX)
+                rule = self._translate_rule(rule, namespace)
                 outbound_rules.append(rule)
 
         return inbound_rules, outbound_rules
@@ -346,20 +345,20 @@ class NetworkPlugin(object):
         print('Applying tags')
 
         # Grab namespace and create a tag if it exists.
-        NAMESPACE_PREFIX, NAMESPACE_TAG = self._get_namespace_and_tag(pod)
+        namespace, ns_tag = self._get_namespace_and_tag(pod)
 
-        if NAMESPACE_PREFIX:
+        if namespace:
             try:
-                print('Adding tag ' + NAMESPACE_TAG) 
-                self.calicoctl('profile', profile_name, 'tag', 'add', NAMESPACE_TAG)
+                print('Adding tag ' + ns_tag) 
+                self.calicoctl('profile', profile_name, 'tag', 'add', ns_tag)
             except sh.ErrorReturnCode as e:
-                print('Could not create tag %s.\n%s' % (NAMESPACE_TAG, e))
+                print('Could not create tag %s.\n%s' % (ns_tag, e))
 
         # Create tags from labels
         labels = self._get_metadata(pod, 'labels')
         if labels:
             for k, v in labels.iteritems():
-                tag = self._label_to_tag(k, v, NAMESPACE_PREFIX)
+                tag = self._label_to_tag(k, v, namespace)
                 print('Adding tag ' + tag)
                 try:
                     self.calicoctl('profile', profile_name, 'tag', 'add', tag)
@@ -381,6 +380,16 @@ class NetworkPlugin(object):
             print('No %s found in pod %s' % (key, pod))
             return None
 
+    def _escape_chars(self, tag):
+        escape_seq = '_'
+        tag = quote(tag, safe='')
+        tag = tag.replace('%', escape_seq)
+
+    def _get_namespace_and_tag(self, pod):
+        namespace = self._get_metadata(pod, 'namespace')
+        ns_tag = self._escape_chars('%s=%s' % ('Namespace', namespace)) if namespace else None
+        return namespace, ns_tag
+
     def _label_to_tag(self, label_key, label_value, namespace):
         """
         Labels are key-value pairs, tags are single strings. This function handles that translation
@@ -394,13 +403,9 @@ class NetworkPlugin(object):
         :return single string tag
         :rtype string
         """
-        escape_seq = '_'
-
         tag = '%s=%s' % (label_key, label_value)
-        tag = (namespace + '/' + tag) if namespace else tag
-        tag = quote(tag, safe='')
-        tag = tag.replace('%', escape_seq)
-
+        tag = '%s/%s' % (namespace, tag) if namespace else tag
+        self._escape_chars(tag)
         return tag
 
     def _translate_rule(self, kube_rule, namespace):
@@ -444,17 +449,11 @@ class NetworkPlugin(object):
 
             kube_rule.pop('labels')
 
+        # As Calico rules are translated, kubernetes rules are popped. Any that remain are tossed out.
         if kube_rule :
             print "Rejected Rules in Kubernetes Annotations \n%s" % kube_rule
 
         return calico_rule
-
-    def _get_namespace_and_tag(self, pod):
-        NAMESPACE_PREFIX = self._get_metadata(pod, 'namespace')
-        NAMESPACE_TAG = self._label_to_tag('namespace', NAMESPACE_PREFIX, None) if NAMESPACE_PREFIX else None
-        return NAMESPACE_PREFIX, NAMESPACE_TAG
-
-
 
 
 if __name__ == '__main__':
