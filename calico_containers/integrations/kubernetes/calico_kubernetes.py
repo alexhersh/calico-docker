@@ -420,19 +420,19 @@ class NetworkPlugin(object):
         """
         calico_rule = rule
 
-        # Kubernetes and Calico use different syntax, these switches will translate K->C
-        if 'srcPort' in calico_rule.keys():
-            calico_rule['src_port'] = calico_rule.pop('srcPort')
-        if 'dstPort' in calico_rule.keys():
-            calico_rule['dst_port'] = calico_rule.pop('dstPort')
+        # kube syntax : calico syntax
+        translation_dictionary = {
+            'srcPorts': 'src_ports',
+            'dstPorts': 'dst_ports',
+            'srcNet': 'src_net',
+            'dstNet': 'dst_net',
+            'icmpType': 'icmp_type'
+        }
 
-        if 'srcIP' in calico_rule.keys():
-            calico_rule['src_IP'] = calico_rule.pop('srcIP')
-        if 'dstIP' in calico_rule.keys():
-            calico_rule['dst_IP'] = calico_rule.pop('dstIP')
-
-        if 'icmpType' in calico_rule.keys():
-            calico_rule['icmp_type'] = calico_rule.pop('icmpType')
+        # Kubernetes and Calico use different syntax, use a dictionary to translate
+        for kube_key, calico_key in translation_dictionary.iteritems()
+            if kube_key in calico_rule.keys():
+                calico_rule[calico_key] = calico_rule.pop(kube_key)
 
         # Label selectors need to translate to tags
         if 'labels' in calico_rule.keys():
