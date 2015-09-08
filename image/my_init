@@ -320,6 +320,9 @@ parser.add_argument('--no-kill-all-on-exit', dest = 'kill_all_on_exit',
 parser.add_argument('--quiet', dest = 'log_level',
 	action = 'store_const', const = LOG_LEVEL_WARN, default = LOG_LEVEL_INFO,
 	help = 'Only print warnings and errors')
+parser.add_argument('--loud', dest = 'log_level',
+	action = 'store_const', const = LOG_LEVEL_DEBUG, default = LOG_LEVEL_INFO,
+	help = 'Print debug statements')
 args = parser.parse_args()
 log_level = args.log_level
 
