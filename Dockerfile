@@ -16,7 +16,7 @@
 
 FROM ubuntu:14.04
 
-CMD ["/sbin/my_init"]
+CMD ["/sbin/my_init", "--loud"]
 
 ENV HOME /root
 
