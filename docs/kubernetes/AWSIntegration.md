@@ -18,7 +18,7 @@ This guide will walk you through how to use Calico Networking with an existing A
 
 ## Installing Calico
 On each of your AWS Instances, you will need to download and install the `calicoctl` binary
-```
+```sh
 wget https://github.com/projectcalico/calico-docker/releases/download/v0.9.0/calicoctl
 chmod +x calicoctl
 sudo mv calicoctl /usr/bin/
@@ -26,25 +26,25 @@ sudo mv calicoctl /usr/bin/
 
 ## Configuring the Master
 On your master, you will need to setup an etcd instance specifically for Calico. To do so, you will need to download our etcd manifest
-```
+```sh
 wget https://raw.githubusercontent.com/projectcalico/calico-kubernetes/master/config/master/calico-etcd.manifest 
 ```
 
 Replace all instances of `<PRIVATE_IPV4>` with your master's IP. Then, place the manifest file in the `/etc/kubernetes/manifests/` directory. 
-```
+```sh
 sudo mv calico-etcd.manifest /etc/kubernetes/manifests/
 ```
 
 After a short delay, the kubelet on your master will automatically create a container for the new etcd which can be accessed on port 6666 of your master.
 
 Next, use `calicoctl` to spin up the `calico/node` container and install the Calico [network plugin](https://github.com/projectcalico/calico-kubernetes) for Kubernetes. 
-```
+```sh
 sudo ETCD_AUTHORITY=<MASTER_IPV4>:6666 calicoctl node --kubernetes --kube-plugin-version=v0.4.0
 ```
 
 Then you will need to set up an IP pool with IP-in-IP enabled. This is a [necessary step](../FAQ.md#can-i-run-calico-in-a-public-cloud-environment) in any public cloud environment.
 
-```
+```sh
 sudo ETCD_AUTHORITY=<MASTER_IPV4>:6666 calicoctl pool add 192.168.0.0/16 --ipip --nat-outgoing
 ```
 
@@ -54,27 +54,27 @@ In default configurations, the apiserver requires authentication to access its r
 
 On a fresh cluster, there will be a single default service token for the cluster on your master. You can extract the token with the following command:
 
-```
-TOKEN=$(kubectl describe secret default-token | grep token: | cut -f 2)
+```sh
+export AUTH_TOKEN=$(kubectl describe secret default-token | grep token: | cut -f 2)
 ```
 
 For stronger security, you can create a new Service Account specifically for Calico, and use that account's token:
 
-```
+```sh
 kubectl create -f - <<EOF
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: calico
 EOF
-TOKEN=$(kubectl describe secret calico-token | grep token: | cut -f 2)
+export AUTH_TOKEN=$(kubectl describe secret calico-token | grep token: | cut -f 2)
 ```
 
 Hold on to this token, as you will need it to configure your nodes.
 
 ## Configuring the Nodes
 On each node, use `calicoctl` to spin up the `calico/node` container and install the Calico [network plugin](https://github.com/projectcalico/calico-kubernetes) for Kubernetes. 
-```
+```sh
 sudo ETCD_AUTHORITY=<MASTER_IPV4>:6666 calicoctl node --kubernetes --kube-plugin-version=v0.4.0
 ```
 
@@ -84,7 +84,7 @@ First, you will need to create a file, `/etc/network-environment`, with the foll
 ```
 ETCD_AUTHORITY=<MASTER_IPV4>:6666
 KUBE_API_ROOT=https://<MASTER_IPV4>:443/api/v1/
-KUBE_AUTH_TOKEN=<TOKEN>
+KUBE_AUTH_TOKEN=<AUTH_TOKEN>
 CALICO_IPAM=true
 ```
 
@@ -95,7 +95,7 @@ EnvironmentFile=/etc/network-environment
 You will also need to append the `--network-plugin=calico` flag to the `ExecStart` command.
 
 Restart the kubelet.
-```
+```sh
 sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 ```
@@ -104,7 +104,7 @@ sudo systemctl restart kubelet
 
 As a temporary workaround to issue [projectcalico/calico-docker#426](https://github.com/projectcalico/calico-docker/issues/426), the following manual steps must be run on each node:
 
-```
+```sh
 mkdir -p /etc/iproute2
 echo '8    docker' >> /etc/iproute2/rt_tables
 ip rule add from <Calico pool CIDR> table docker
@@ -116,7 +116,7 @@ Where `<Calico pool CIDR>` is the CIDR assigned to the Calico IP pool, in this e
 ## Now you are ready to begin using Calico Networking!
 
 To test your Calico setup, you can create a simple pod manifest:
-```
+```yaml
 # busybox.yaml
 apiVersion: v1
 kind: Pod

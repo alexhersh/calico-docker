@@ -24,7 +24,7 @@ To enforce a policy rule on your pod, add a `projectcalico.org/policy` key to th
 >Note: The current release of the plugin only supports one source label per rule.
 
 ##### Policy Syntax
-```
+```sh
     allow [(
       (tcp|udp) [from [ports <PORTS>] [label <KEY>=<VAL>] [cidr <CIDR>]]
       | icmp [type <ICMPTYPE> [code <ICMPCODE>]]
@@ -35,7 +35,7 @@ To enforce a policy rule on your pod, add a `projectcalico.org/policy` key to th
 
 
 Here is an example of how this looks in a pod spec.
-```
+```yaml
 ...
   metadata:
     annotations:
@@ -44,7 +44,7 @@ Here is an example of how this looks in a pod spec.
 ```
 
 You can specify multiple rules by separating them with semicolons.
-```
+```yaml
 ...
       projectcalico.org/policy: "allow from label role=backend; allow tcp to ports 2379,443"
 ...
@@ -58,7 +58,7 @@ With no specified policy, Calico will only allow traffic from within a pod's own
 For each policy profile, Calico will generate a tag for its namespace, pod name, and for each label pair.
 
 For example, the metadata
-```
+```yaml
 metadata:
   name: pod1
   namespace: production
@@ -68,7 +68,7 @@ metadata:
 ```
 
 will generate the following tags
-```
+```yaml
 namespace_production
 production_pod1
 production_role_backend
